@@ -12,8 +12,13 @@ export default function LoginPage() {
   const handleLogin = async () => {
     try {
       const res = await api.post('/login', { email, password })
-      localStorage.setItem('user', JSON.stringify(res.data))
-      router.push('/groups')
+      const { token } = res.data;
+      if(!res.data.token) {
+        setError('Invalid credentials')
+        return;
+      }
+      localStorage.setItem('userId', token); 
+      router.push('/home');
     } catch (err) {
       setError('Invalid credentials')
     }
