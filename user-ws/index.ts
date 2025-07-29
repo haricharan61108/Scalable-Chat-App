@@ -3,6 +3,15 @@ import {WebSocketServer,WebSocket as WebSocketWsType} from 'ws';
 import { PrismaClient} from './generated/prisma';
 import { randomUUID } from "crypto";
 
+type Payload =
+  | { type: "join-room"; roomId: string; userId: string }
+  | {
+      type: "chat";
+      content: string;
+      senderId: string;
+      groupId: string;
+    };
+
 const prisma = new PrismaClient();
 const setCorsHeaders = (response: Response): Response => {
   const headers = new Headers(response.headers);
@@ -33,11 +42,11 @@ const relayerSocket = new WebSocket(RELAYER_URL);
 
 relayerSocket.onmessage = ({ data }) => {
   const parsedData = JSON.parse(data.toString());
-  const room = parsedData.room;
+  const room = parsedData.roomId;
   if (!room || !rooms[room]) return;
   rooms[room].sockets.forEach((socket) => {
     if (socket.readyState === WebSocket.OPEN) {
-      socket.send(data);
+      socket.send(JSON.stringify(parsedData));
     }
   });
 };
@@ -45,33 +54,72 @@ relayerSocket.onmessage = ({ data }) => {
 wss.on("connection", function connection(ws) {
   ws.on("error", console.error);
 
-  ws.on("message", function message(data: string) {
-    const parsedData = JSON.parse(data);
+  ws.on("message",async function message(rawData: string) {
+    let parsedData: Payload;
+    try {
+      parsedData = JSON.parse(rawData);
+    } catch (e) {
+      console.error("Invalid JSON message:", rawData);
+      return;
+    }
 
     // Join Room
     if (parsedData.type === "join-room") {
-      const { room, userId } = parsedData;
-      if (!room || !userId) return;
+      const { roomId, userId } = parsedData;
+      if (!roomId || !userId) return;
 
-      if (!rooms[room]) {
-        rooms[room] = { sockets: [] };
+      if (!rooms[roomId]) {
+        rooms[roomId] = { sockets: [] };
       }
 
-      if (!rooms[room].sockets.includes(ws)) {
-        rooms[room].sockets.push(ws);
-        console.log(`User ${userId} joined room ${room}`);
+      if (!rooms[roomId].sockets.includes(ws)) {
+        rooms[roomId].sockets.push(ws);
+        console.log(`User ${userId} joined room ${roomId}`);
       }
     }
  
-    if (parsedData.type === "chat") {
-      if (relayerSocket.readyState === WebSocket.OPEN) {
-        relayerSocket.send(data);
-      }
+    if(parsedData.type==="chat") {
+      const { content, senderId, groupId } = parsedData;
+
+      try {
+        const group = await prisma.group.findUnique({ 
+          where: { roomId: groupId },
+          select: { id: true } 
+        });
+        if (!group) {
+          console.error(`Group with ID/roomId ${groupId} does not exist. 
+            Received message:`, parsedData);
+           return;
+        }
+        console.log("Group id:", group.id);
+        const saved=await prisma.message.create({
+          data: {
+            content,
+            senderId,
+            groupId:group.id,
+          }
+        })
+        const messageWithSender = {
+          type: "chat",
+          id: saved.id,
+          content: saved.content,
+          senderId: saved.senderId,
+          groupId: saved.groupId,
+          createdAt: saved.createdAt,
+          roomId: groupId, 
+        };
+
+        if (relayerSocket.readyState === WebSocket.OPEN) {
+          relayerSocket.send(JSON.stringify(messageWithSender));
+        }
+      } catch (err) {
+        console.error("Failed to save message:", err);
+      } 
     }
   });
 
   ws.on("close", () => {
-    // Cleanup: Remove socket from all rooms
+    // Remove socket from all rooms
     for (const roomId in rooms) {
       rooms[roomId].sockets = rooms[roomId].sockets.filter(
         (s) => s !== ws
@@ -214,6 +262,16 @@ serve({
             return new Response("Internal Server Error", { status: 500 });
           }
           
+        }
+
+        if(req.method==="GET" && url.pathname.startsWith("/messages/")) {
+          const groupId = url.pathname.split("/")[2];
+          const messages = await prisma.message.findMany({
+            where: { groupId },
+            orderBy: { createdAt: "asc" },
+          });
+
+          response=Response.json(messages);
         }
         return setCorsHeaders(response);
       } catch (error) {

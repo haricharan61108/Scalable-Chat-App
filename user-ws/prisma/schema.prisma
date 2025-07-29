@@ -18,7 +18,8 @@ model User {
   email       String        @unique
   password    String
   memberships Membership[]  // Groups the user has joined
-  createdGroups Group[]     @relation("UserCreatedGroups") // Groups the user created
+  createdGroups Group[]     @relation("UserCreatedGroups")
+  messages   Message[]
 }
 
 
@@ -31,6 +32,7 @@ model Group {
   creator    User          @relation("UserCreatedGroups", fields: [createdBy], references: [id])
   members    Membership[]
   createdAt  DateTime      @default(now())
+  messages   Message[]
 }
 
 
@@ -42,5 +44,15 @@ model Membership {
   group    Group   @relation(fields: [groupId], references: [id])
 
   @@unique([userId, groupId])
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  content   String
+  senderId  String
+  groupId   String
+  sender    User     @relation(fields: [senderId], references: [id])
+  group     Group    @relation(fields: [groupId], references: [id])
+  createdAt DateTime @default(now())
 }
 

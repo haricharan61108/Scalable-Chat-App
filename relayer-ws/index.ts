@@ -4,7 +4,7 @@ const wss=new WebSocketServer({port:3001});
 
 
 const servers:WebSocket[]=[];
-
+console.log("Server started on port 3001");
 wss.on('connection',function connection(ws){
     ws.on('error', console.error);
     servers.push(ws);
