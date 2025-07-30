@@ -121,9 +121,11 @@ wss.on("connection", function connection(ws) {
   ws.on("close", () => {
     // Remove socket from all rooms
     for (const roomId in rooms) {
+      //@ts-ignore
       rooms[roomId].sockets = rooms[roomId].sockets.filter(
         (s) => s !== ws
       );
+      //@ts-ignore
       if (rooms[roomId].sockets.length === 0) {
         delete rooms[roomId];
       }
@@ -273,6 +275,7 @@ serve({
 
           response=Response.json(messages);
         }
+        //@ts-ignore
         return setCorsHeaders(response);
       } catch (error) {
         console.error(error);
