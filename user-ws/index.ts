@@ -140,6 +140,7 @@ serve({
       if (req.method === 'OPTIONS') {
         return setCorsHeaders(new Response(null, { status: 204 }));
       }
+      
       try {
         let response: Response;
         if (req.method === "POST" && url.pathname === "/register") {
@@ -267,9 +268,19 @@ serve({
         }
 
         if(req.method==="GET" && url.pathname.startsWith("/messages/")) {
-          const groupId = url.pathname.split("/")[2];
+          const roomId = url.pathname.split("/")[2];
+
+          const group = await prisma.group.findUnique({
+            where: { roomId },
+            select: { id: true }
+          });
+
+          if (!group) {
+            return new Response("Group not found", { status: 404 });
+          }
+
           const messages = await prisma.message.findMany({
-            where: { groupId },
+            where: { groupId: group.id },
             orderBy: { createdAt: "asc" },
           });
 
